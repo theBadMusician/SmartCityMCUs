@@ -11,7 +11,8 @@
 
 #define DHTPIN 15     // Digital pin connected to the DHT sensor
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
-DHT dht(DHTPIN, DHTTYPE);
+DHT dht;
+
 
 #define LIGHTPIN 33
 int lightTotal, lightAvg;
@@ -31,8 +32,8 @@ void setup() {
 
     while (!Serial) continue;
 
-  	dht.begin();
-
+    dht.setup(DHTPIN);    
+  	
     // Setting up WIFI
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
@@ -95,7 +96,7 @@ void setup() {
 void loop() {
     ArduinoOTA.handle();
     
-	if (millis() - timeCheck0 > 5000) {
+	if (millis() - timeCheck0 > 200) {
 	    int lightRead = analogRead(LIGHTPIN);
 	    if (lightRead > max_val) max_val = lightRead;
 		else if (lightRead < min_val) min_val = lightRead;
@@ -107,7 +108,7 @@ void loop() {
 		timeCheck0 = millis();
 	}
     
-    if (millis() - timeCheck1 > 30000) {
+    if (millis() - timeCheck1 > 1000) {
         if(WiFi.status() != WL_CONNECTED) {
         	Serial.println("Error in WiFi connection");						//Check WiFi connection status
         	return;        }
@@ -117,8 +118,8 @@ void loop() {
 		JsonObject root = doc.to<JsonObject>();
 		
 		JsonObject docDHT22 = root.createNestedObject("DHT22");
-		docDHT22["Temperature[°C]"] = dht.readTemperature();
-        docDHT22["Humidity[%]"] = dht.readHumidity();
+		docDHT22["Temperature[°C]"] = dht.getTemperature();
+        docDHT22["Humidity[%]"] = dht.getHumidity();
 
         JsonObject docLX = root.createNestedObject("Light_Sensor");
         docLX["Brightness[%]"] = (lightTotal / 1.0) / counter;        
