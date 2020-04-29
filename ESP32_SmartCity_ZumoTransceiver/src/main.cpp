@@ -26,13 +26,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 // Define left/right and up/down joystick axes' pins.
 uint32_t check_time_OLED = 0;
 
-struct dataPackage
-{
-    uint8_t LR_value;
-    uint8_t UD_value;
-};
-dataPackage data;
-
 // Network settings
 const char *ssid = "PrivatNettverk";
 const char *password = "Plechavicius1652";
@@ -44,13 +37,21 @@ uint32_t timeCheck = 0;
 // States
 enum StateMachine
 {
+    stateStandby,
+    stateStop,
     stateDriveSquare,
     stateDriveCircle,
     stateDriveLine,
-    stateDriveSnake,
-    stateStandby,
-    stateStop
+    stateDriveSnake
 } states;
+
+struct dataPackage
+{
+    uint8_t STATE;
+    uint8_t LR_value = 0;
+    uint8_t UD_value = 0;
+};
+dataPackage data;
 
 // Is server checked flag
 bool serverCheck = 0;
@@ -95,7 +96,7 @@ void setup()
     Serial.begin(115200);
     Serial2.begin(115200, SERIAL_8N1, -1, 17);
 
-        // WIFI setup
+    // WIFI setup
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
     while (WiFi.waitForConnectResult() != WL_CONNECTED)
@@ -111,12 +112,26 @@ void setup()
 
 void loop()
 {
-    if (millis() - timeCheck > checkInterval) checkServer();
-    Serial2.write((uint8_t*)&data, sizeof(dataPackage));
+    if (millis() - timeCheck > checkInterval) {
+        checkServer();
+    }
 
+    if (serverCheck)
+    {
 
+        Serial.println(states);
+        data.STATE = states;
+        Serial2.write((uint8_t *)&data, sizeof(dataPackage));
+
+        serverCheck = 0;
+
+        states = stateStandby;
+        data.STATE = states;
+         Serial2.write((uint8_t *)&data, sizeof(dataPackage));
+
+    }
+    
 }
-
 
 void checkServer()
 {
@@ -128,7 +143,10 @@ void checkServer()
     }
 
     http.begin("http://88.91.42.155/zumo-control"); //Specify destination for HTTP request
-    int httpResponseCode = http.GET();             //Specify request type
+    int httpResponseCode = http.GET();              //Specify request type
+
+    display.clearDisplay();
+    display.setTextSize(2);
 
     if (httpResponseCode > 0)
     {
@@ -136,31 +154,76 @@ void checkServer()
 
         Serial.println(httpResponseCode); //Print return code
         Serial.println(response);         //Print request answer
-        
+
+        display.setCursor(0, 0);
+        display.println(response);
+
         serverCheck = 1;
 
-        if (response == "patternSquare")
+        if (response == "patternSquare") {
             states = stateDriveSquare;
-        else if (response == "patternSquare")
+            checkInterval = 10100;
+        }
+        else if (response == "patternCircle") {
             states = stateDriveCircle;
-        else if (response == "patternLine")
+            checkInterval = 7100;
+        }
+        else if (response == "patternLine") {
             states = stateDriveLine;
-        else if (response == "patternSnake")
+            checkInterval = 5100;
+        }
+        else if (response == "patternSnake") {
             states = stateDriveSnake;
-        else if (response == "stop")
+            checkInterval = 5100;
+        }
+        else if (response == "stop") {
             states = stateStop;
-        else states = stateStandby;
+            checkInterval = 500;
+        }
+        else {
+            states = stateStandby;
+            checkInterval = 500;
+        } 
     }
     else
     {
+        display.setCursor(0, 0);
+        display.println("ERROR");
         Serial.print("Error on sending POST: ");
         Serial.println(httpResponseCode);
+        states = stateStandby;
     }
-    display.clearDisplay();
-    display.setCursor(0, 0);
+
+    display.setCursor(0, 112);
     display.println(httpResponseCode);
     display.display();
 
     http.end(); //Free resources
     timeCheck = millis();
 }
+
+// switch (states)
+// {
+// case stateDriveSquare:
+//     data.STATE =
+//         break;
+
+// case stateDriveCircle:
+
+//     break;
+
+// case stateDriveLine:
+
+//     break;
+
+// case stateDriveSnake:
+
+//     break;
+
+// case stateStop:
+
+//     break;
+
+// case stateStandby:
+
+//     break;
