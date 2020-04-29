@@ -14,29 +14,31 @@
 // 2020, Benjaminas Visockis
 //******************************************************************************
 
+#include <Arduino.h>
 #include <Wire.h>
 #include <Zumo32U4.h>
+#include <stdlib.h>
 #include <stdio.h>
 
-#define DEBUG 0 		// Sett til sant for minimal debugging.
+#define DEBUG 0 // Sett til sant for debugging.
 
 Zumo32U4LCD 				lcd;
 Zumo32U4ButtonA 			buttonA;
 Zumo32U4LineSensors 		lineSensors;
 Zumo32U4ProximitySensors 	proxSensors;
-Zumo32U4Motors 				motor;
+Zumo32U4Motors 				motors;
 
 #define		NUM_SENSORS 5
 uint16_t	lineSensorValues[NUM_SENSORS];
 bool 		useEmitters = true;
 uint8_t 	selectedSensorIndex = 0;
 
-// Disse verdiene kan eksperimenteres med og kalibreres bedre.
-#define  	proportional_term  0.1  //0.5 funker bra, 0.3 enda bedre, 0.25 også, 0.1 starter å sakte ned.
-#define		derivative_term  20.0
-#define		sample_rate 1
-#define		cc_definition 10000 // 1500, 3000, 10000 funker bra, høyere verdier gjør at dronen sakter.
-#define		cc_speed 100
+// Disse verdiene kan eksperimenteres med og de kan kalibreres bedre.
+#define  	proportional_term  0.2  // 0.5 funker bra, 0.3 enda bedre, 0.25 også, 0.1 starter å sakte ned.
+#define		derivative_term  15.0	// Ble ikke testet så mye, men 9.0 ser ut til å funke godt.
+#define		sample_rate 1			// Hvor ofte avvik måles, funker bra ved 1 us. Jo høyere tallet, jo bedre støyfiltrering, men også mer unøyaktighet.
+#define		cc_definition 20000 	// 1500, 3000, 10000 funker bra, høyere verdier gjør at dronen sakter ned.
+#define		cc_speed 250
 
 // En array for avvik + en sjekk for hvor mange elementer i arrayen.
 double 		error[5] = {0, 0, 0, 0, 0};
@@ -62,13 +64,13 @@ void calibrate_sensors() {
 	check_time_calibrate = millis();
 	while (millis() - check_time_calibrate < 4000) {;
 		if (millis() - check_time_calibrate > 1500 && millis() - check_time_calibrate < 3500) {
-			motor.setSpeeds(-200, 200);
+			motors.setSpeeds(-100, 100);
 		} else {
-			motor.setSpeeds(200, -200);
+			motors.setSpeeds(100, -100);
 		}
 		lineSensors.calibrate();
 	}
-	motor.setSpeeds(0, 0);
+	motors.setSpeeds(0, 0);
 }
 
 
@@ -127,10 +129,10 @@ void loop() {
 	right_speed = 100 + cruise_control - turn_control;
 	
 	// Farten begrenses.
-	left_speed = constrain(left_speed, -200, 200);
-	right_speed = constrain(right_speed, -200, 200);
+	left_speed = constrain(left_speed, -400, 400);
+	right_speed = constrain(right_speed, -400, 400);
 
-	motor.setSpeeds(right_speed, left_speed);
+	motors.setSpeeds(right_speed, left_speed);
 	
 	// Skrive avlesingen fra linje sensorene og fartene til LDC skjerm.
 	if (millis() - check_time_lcd > 100) {
