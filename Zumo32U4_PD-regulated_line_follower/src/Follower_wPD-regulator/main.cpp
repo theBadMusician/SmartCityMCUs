@@ -20,7 +20,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define DEBUG 0 // Sett til sant for debugging.
+#define DEBUG 1// Sett til sant for debugging.
 
 Zumo32U4LCD 				lcd;
 Zumo32U4ButtonA 			buttonA;
@@ -75,7 +75,7 @@ void calibrate_sensors() {
 
 
 void setup() {
-	Serial.begin(9600);
+	Serial.begin(115200);
 
 	lcd.clear();
 	lcd.print("Press A");
@@ -95,9 +95,16 @@ void setup() {
 void loop() {
 	
 	#if DEBUG
-		char buffer[100];
-		sprintf(buffer, "%d   %d   %d   %d   %d", error[0], error[1], error[2], error[3], error[4]);
-		Serial.println(buffer);
+	Serial.print(error[0]);
+	Serial.print("   ");
+	Serial.print(error[1]);
+	Serial.print("   ");
+	Serial.print(error[2]);
+	Serial.print("   ");
+	Serial.print(error[3]);
+	Serial.print("   ");
+	Serial.print(error[4]);
+	Serial.println("   ");
 	#endif
 
 	// IR-sensorene leses.

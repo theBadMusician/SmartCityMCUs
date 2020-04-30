@@ -1,4 +1,4 @@
-#ifdef RUN
+#ifndef RUN
 //**********************************************************************//
 //**********************************************************************//
 #include <Arduino.h>
@@ -39,6 +39,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 uint32_t check_time_OLED = 0;
 
 struct dataPackage {
+  uint8_t STATE = 99;
   uint8_t LR_value;
   uint8_t UD_value;
 };
