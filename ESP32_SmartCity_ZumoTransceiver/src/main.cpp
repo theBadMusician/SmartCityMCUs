@@ -5,6 +5,7 @@
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <LoRa.h>
 
 #define SCK 5
 #define MISO 19
@@ -23,8 +24,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RST);
 //**********************************************************************//
 //**********************************************************************//
 
-// Define left/right and up/down joystick axes' pins.
-uint32_t check_time_OLED = 0;
 
 // Network settings
 const char *ssid = "PrivatNettverk";
@@ -34,6 +33,16 @@ HTTPClient http;
 // Time check variables
 uint32_t timeCheck = 0;
 
+// RC control settings
+uint32_t check_time_OLED = 0;
+
+//433E6 for Asia
+//866E6 for Europe
+//915E6 for North America
+#define BAND 866E6
+
+bool RCflag = 0;
+
 // States
 enum StateMachine
 {
@@ -42,7 +51,10 @@ enum StateMachine
     stateDriveSquare,
     stateDriveCircle,
     stateDriveLine,
-    stateDriveSnake
+    stateDriveSnake,
+    stateLineFollower,
+    stateRCControl,
+    nothing=99
 } states;
 
 struct dataPackage
@@ -59,6 +71,10 @@ uint16_t checkInterval = 1000;
 
 // Functions
 void checkServer();
+void updateStates();
+
+void initializeLoRa();
+void RCControl();
 
 void setup()
 {
@@ -105,32 +121,23 @@ void setup()
         delay(5000);
         ESP.restart();
     }
-
     // Time checks setup
     timeCheck = millis();
 }
 
 void loop()
 {
-    if (millis() - timeCheck > checkInterval) {
-        checkServer();
-    }
+    updateStates();
 
-    if (serverCheck)
+    if (RCflag)
     {
-
-        Serial.println(states);
-        data.STATE = states;
-        Serial2.write((uint8_t *)&data, sizeof(dataPackage));
-
-        serverCheck = 0;
-
-        states = stateStandby;
-        data.STATE = states;
-         Serial2.write((uint8_t *)&data, sizeof(dataPackage));
-
+        initializeLoRa();
+        while (RCflag)
+        {
+            RCControl();
+            updateStates();
+        }
     }
-    
 }
 
 void checkServer()
@@ -160,30 +167,48 @@ void checkServer()
 
         serverCheck = 1;
 
-        if (response == "patternSquare") {
+        if (response == "patternSquare")
+        {
             states = stateDriveSquare;
             checkInterval = 10100;
         }
-        else if (response == "patternCircle") {
+        else if (response == "patternCircle")
+        {
             states = stateDriveCircle;
             checkInterval = 7100;
         }
-        else if (response == "patternLine") {
+        else if (response == "patternLine")
+        {
             states = stateDriveLine;
             checkInterval = 5100;
         }
-        else if (response == "patternSnake") {
+        else if (response == "patternSnake")
+        {
             states = stateDriveSnake;
             checkInterval = 5100;
         }
-        else if (response == "stop") {
+        else if (response == "startLineFollower")
+        {
+            states = stateLineFollower;
+            checkInterval = 5100;
+        }
+        else if (response == "startRCControl")
+        {
+            states = stateRCControl;
+            checkInterval = 3100;
+        }
+        else if (response == "stop")
+        {
+            display.setTextSize(2);
+            RCflag = 0;
             states = stateStop;
             checkInterval = 500;
         }
-        else {
+        else
+        {
             states = stateStandby;
             checkInterval = 500;
-        } 
+        }
     }
     else
     {
@@ -202,28 +227,85 @@ void checkServer()
     timeCheck = millis();
 }
 
-// switch (states)
-// {
-// case stateDriveSquare:
-//     data.STATE =
-//         break;
+void updateStates()
+{
+    if (millis() - timeCheck > checkInterval)
+    {
+        checkServer();
+    }
 
-// case stateDriveCircle:
+    if (serverCheck)
+    {
 
-//     break;
+        Serial.println(states);
+        data.STATE = states;
+        Serial2.write((uint8_t *)&data, sizeof(dataPackage));
 
-// case stateDriveLine:
+        serverCheck = 0;
 
-//     break;
+        if (states == stateRCControl) RCflag = 1;
+        if (states == stateStop) RCflag = 0;
 
-// case stateDriveSnake:
+        states = stateStandby;
+        data.STATE = states;
+        Serial2.write((uint8_t *)&data, sizeof(dataPackage));
+    }
+}
 
-//     break;
+void initializeLoRa()
+{
+    //SPI LoRa pins
+    SPI.begin(SCK, MISO, MOSI, SS);
+    //setup LoRa transceiver module
+    LoRa.setPins(SS, RST, DIO0);
 
-// case stateStop:
+    if (!LoRa.begin(BAND))
+    {
+        Serial.println("Starting LoRa failed!");
+        delay(5000);
+        ESP.restart();
+    }
+    display.setTextSize(1);
 
-//     break;
+}
 
-// case stateStandby:
+void RCControl()
+{
+    int rssi;
 
-//     break;
+    //try to parse packet
+    int packetSize = LoRa.parsePacket();
+    if (packetSize)
+    {
+        //received a packet
+
+        //read packet
+        while (LoRa.available())
+            LoRa.readBytes((uint8_t *)&data, packetSize);
+
+        //print RSSI of packet
+        rssi = LoRa.packetRssi();
+    }
+    Serial2.write((uint8_t *)&data, sizeof(dataPackage));
+
+    char buffer[100];
+    sprintf(buffer, "%d %d", data.LR_value, data.UD_value);
+    if (millis() - check_time_OLED >= 100)
+    {
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.println(buffer);
+
+        display.setCursor(0, 9);
+        display.print("RSSI: ");
+        display.println(rssi);
+
+        display.display();
+        check_time_OLED = millis();
+        Serial.print(buffer);
+        Serial.print(" ");
+        Serial.print(data.STATE);
+        Serial.print(" ");
+        Serial.println(states);
+    }
+}
