@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <LoRa.h>
+#include <SocketIoClient.h>
 
 #define SCK 5
 #define MISO 19
@@ -54,6 +55,7 @@ enum StateMachine
     stateDriveSnake,
     stateLineFollower,
     stateRCControl,
+    stateDirectControl,
     nothing=99
 } states;
 
@@ -67,7 +69,19 @@ dataPackage data;
 
 // Is server checked flag
 bool serverCheck = 0;
+uint32_t noConnectionTimer = 0;
 uint16_t checkInterval = 1000;
+
+/// Socket.IO Settings ///
+char host[] = "88.91.42.155"; // Socket.IO Server Address
+int port = 80; // Socket.IO Port Address
+char path[] = "/socket.io/?transport=websocket"; // Socket.IO Base Path
+bool useSSL = false; // Use SSL Authentication
+
+bool directControlFlag = 0;
+
+SocketIoClient webSocket;
+WiFiClient client;
 
 // Functions
 void checkServer();
@@ -75,6 +89,11 @@ void updateStates();
 
 void initializeLoRa();
 void RCControl();
+
+void socket_Connected(const char *payload, size_t length);
+void socket_Disonnected(const char *payload, size_t length);
+void socketToggleDirectControl(const char *payload, size_t length);
+void socketDirectControlKeys(const char *payload, size_t length);
 
 void setup()
 {
@@ -121,6 +140,16 @@ void setup()
         delay(5000);
         ESP.restart();
     }
+
+    webSocket.begin(host, port, path);
+
+    // Websockets
+    webSocket.on("connect", socket_Connected);
+    webSocket.on("disconnect", socket_Disonnected);
+    webSocket.on("zumoDirectControlCommand", socketDirectControlKeys);
+    webSocket.on("directControlBtnUpdate", socketToggleDirectControl);
+
+    
     // Time checks setup
     timeCheck = millis();
 }
@@ -136,6 +165,16 @@ void loop()
         {
             RCControl();
             updateStates();
+        }
+    }
+
+    else if (directControlFlag)
+    {
+        while (directControlFlag)
+        {
+            webSocket.loop();
+            updateStates();
+
         }
     }
 }
@@ -157,6 +196,8 @@ void checkServer()
 
     if (httpResponseCode > 0)
     {
+        if (millis() - noConnectionTimer > 7000) RCflag = 0;
+
         String response = http.getString(); //Get the response to the request
 
         Serial.println(httpResponseCode); //Print return code
@@ -190,17 +231,23 @@ void checkServer()
         else if (response == "startLineFollower")
         {
             states = stateLineFollower;
-            checkInterval = 5100;
+            checkInterval = 2500;
         }
         else if (response == "startRCControl")
         {
             states = stateRCControl;
             checkInterval = 3100;
         }
+        else if (response == "startDirectControl")
+        {
+            states = stateDirectControl;
+            checkInterval = 3100;
+        }
         else if (response == "stop")
         {
             display.setTextSize(2);
             RCflag = 0;
+            directControlFlag = 0;
             states = stateStop;
             checkInterval = 500;
         }
@@ -209,6 +256,8 @@ void checkServer()
             states = stateStandby;
             checkInterval = 500;
         }
+
+        noConnectionTimer = millis();
     }
     else
     {
@@ -216,7 +265,18 @@ void checkServer()
         display.println("ERROR");
         Serial.print("Error on sending POST: ");
         Serial.println(httpResponseCode);
-        states = stateStandby;
+
+        if (millis() - noConnectionTimer > 7000) {
+            if (!RCflag) {
+                states = stateRCControl;
+                RCflag = 1;
+            }
+            display.setCursor(0, 32);
+            display.println("DC RC EN");
+            
+        }
+        else if (millis() - noConnectionTimer > 5000) states = stateStop;
+        else states = stateStandby;
     }
 
     display.setCursor(0, 112);
@@ -244,7 +304,11 @@ void updateStates()
         serverCheck = 0;
 
         if (states == stateRCControl) RCflag = 1;
-        if (states == stateStop) RCflag = 0;
+        if (states == stateDirectControl) directControlFlag = 1;
+        if (states == stateStop) {
+            directControlFlag = 0;
+            RCflag = 0;
+        }
 
         states = stateStandby;
         data.STATE = states;
@@ -289,14 +353,14 @@ void RCControl()
     Serial2.write((uint8_t *)&data, sizeof(dataPackage));
 
     char buffer[100];
-    sprintf(buffer, "%d %d", data.LR_value, data.UD_value);
+    sprintf(buffer, "%d\n%d", data.LR_value, data.UD_value);
     if (millis() - check_time_OLED >= 100)
     {
         display.clearDisplay();
         display.setCursor(0, 0);
         display.println(buffer);
 
-        display.setCursor(0, 9);
+        display.setCursor(0, 50);
         display.print("RSSI: ");
         display.println(rssi);
 
@@ -308,4 +372,30 @@ void RCControl()
         Serial.print(" ");
         Serial.println(states);
     }
+}
+
+void socket_Connected(const char *payload, size_t length)
+{
+    Serial.println("Socket.IO Connected!");
+}
+
+void socket_Disonnected(const char *payload, size_t length)
+{
+    Serial.println("Socket.IO Disconnected!");
+}
+
+void socketDirectControlKeys(const char *payload, size_t length)
+{
+    Serial.print("got message: ");
+    if (data.LR_value != *(payload)-48)
+        data.LR_value = *(payload)-48;
+    Serial.println(data.LR_value);
+    Serial2.write((uint8_t *)&data, sizeof(dataPackage));
+}
+
+void socketToggleDirectControl(const char *payload, size_t length)
+{
+    Serial.print("got message: ");
+    Serial.println(payload);
+    updateStates();
 }

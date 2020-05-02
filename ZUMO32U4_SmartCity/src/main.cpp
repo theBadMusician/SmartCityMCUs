@@ -14,6 +14,7 @@ Zumo32U4Encoders encoders;
 Zumo32U4Motors motors;
 Zumo32U4LineSensors lineSensors;
 Zumo32U4ProximitySensors proxSensors;
+Zumo32U4Buzzer buzzer;
 
 // Line Follower settings and variables
 #define NUM_SENSORS 5
@@ -69,7 +70,9 @@ enum StateMachine
     stateDriveLine,
     stateDriveSnake,
     stateLineFollower,
-    stateRCControl
+    stateRCControl,
+    stateDirectControl,
+    nothing=99
 } states;
 
 struct dataPackage
@@ -101,6 +104,9 @@ void lineFollowerMain();
 
 //RC control
 void RCControl();
+
+// Direct Control
+void directControl();
 
 void setup()
 {
@@ -134,31 +140,41 @@ void loop()
     switch (states)
     {
     case stateStandby:
-        turnSensorReset();
-        motors.setSpeeds(0, 0);
         break;
 
     case stateDriveSquare:
+        buzzer.play("O5 g8a8");
         turnSensorReset();
         driveSquare();
+        buzzer.play("O5 g8d8<g8<a8");
         break;
 
     case stateDriveCircle:
+        buzzer.play("O5 g8a8");
+        turnSensorReset();
+        turnRight(90);
         turnSensorReset();
         driveCircle();
+        turnLeft(90);
+        buzzer.play("O5 g8d8<g8<a8");
         break;
 
     case stateDriveLine:
+        buzzer.play("O5 g8a8");
         turnSensorReset();
         driveLineBF();
+        buzzer.play("O5 g8d8<g8<a8");
         break;
 
     case stateDriveSnake:
+        buzzer.play("O5 g8a8");
         turnSensorReset();
         driveSnake();
+        buzzer.play("O5 g8d8<g8<a8");
         break;
 
     case stateLineFollower:
+        buzzer.play("O5 g8a8");
         lineFollowerSetup();
         while (states != stateStop)
         {
@@ -169,7 +185,12 @@ void loop()
                 states = (StateMachine)data.STATE;
             }
         }
+        motors.setSpeeds(0, 0);
+        buzzer.play("O5 g8d8<g8<a8");
+        break;
+
     case stateRCControl:
+        buzzer.play("O5 g8a8");
         while (states != stateStop) {
             RCControl();
             if (Serial1.available() > 0)
@@ -178,6 +199,68 @@ void loop()
                 states = (StateMachine)data.STATE;
             }
         }
+        motors.setSpeeds(0, 0);
+        buzzer.play("O5 g8d8<g8<a8");
+        break;
+
+    case stateDirectControl:
+        buzzer.play("O5 g8a8");
+        while (states != stateStop) {
+            
+            if (Serial1.available() > 0)
+            {
+                Serial1.readBytes((uint8_t *)&data, sizeof(dataPackage)) == sizeof(dataPackage);
+                states = (StateMachine)data.STATE;
+                Serial.println(data.LR_value);
+                switch (data.LR_value)
+                {
+                case 0:
+                    motors.setSpeeds(0, 0);
+                    break;
+                
+                case 1:
+                    motors.setSpeeds(400, 400);
+                    break;
+
+                case 2:
+                    motors.setSpeeds(-400, -400);
+                    break;
+                
+                case 3:
+                    motors.setSpeeds(0, 400);
+                    break;
+                
+                case 4:
+                    motors.setSpeeds(400, 0);
+                    break;
+
+                case 5:
+                    motors.setSpeeds(200, 400);
+                    break;
+                
+                case 6:
+                    motors.setSpeeds(400, 200);
+                    break;
+                
+                case 7:
+                    motors.setSpeeds(-200, -400);
+                    break;
+
+                case 8:
+                    motors.setSpeeds(-400, -200);
+                    break;
+                
+                case 9:
+                    motors.setSpeeds(0, 0);
+                    break;
+                
+                default:
+                    break;
+                }
+            }
+        }
+        motors.setSpeeds(0, 0);
+        buzzer.play("O5 g8d8<g8<a8");
         break;
     }
 }
@@ -331,13 +414,12 @@ void driveCircle()
 {
     turnSensorReset();
     int curAngle = 0;
-    motors.setSpeeds(100, 200);
+    motors.setSpeeds(200, 400);
     while (curAngle != -2)
     {
         turnSensorUpdate();
         curAngle = (((int32_t)turnAngle >> 16) * 360) >> 16;
     }
-    delay(100);
     motors.setSpeeds(0, 0);
     delay(100);
 }
@@ -347,29 +429,29 @@ void driveHalfCircle(bool reverseDirection)
     turnSensorReset();
     int curAngle = 0;
     if (!reverseDirection)
-        motors.setSpeeds(100, 200);
+        motors.setSpeeds(200, 400);
     else
-        motors.setSpeeds(200, 100);
+        motors.setSpeeds(400, 200);
     while (curAngle != 179)
     {
         turnSensorUpdate();
         curAngle = (((int32_t)turnAngle >> 16) * 360) >> 16;
     }
-    delay(50);
     motors.setSpeeds(0, 0);
     delay(100);
 }
 
 void driveSnake()
 {
+    turnRight(90);
+    turnSensorReset();
     driveHalfCircle(0);
     driveHalfCircle(1);
     driveCircle();
     driveHalfCircle(1);
     driveHalfCircle(0);
 
-    motors.setSpeeds(100, 200);
-    delay(100);
+    turnLeft(90);
     motors.setSpeeds(0, 0);
     delay(100);
 }
@@ -502,4 +584,8 @@ void RCControl() {
 	#if DEBUGGING
 		Serial.println(String(String(LMS) + String("   ") + String(RMS)));
 	#endif
+}
+
+void directControl() {
+    
 }
